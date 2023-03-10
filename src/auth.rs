@@ -152,15 +152,16 @@ pub fn auth() -> Result<String, AuthError> {
             let token = token.access_token().secret().to_string();
             save_token(&token)?;
 
-            let client = reqwest::blocking::Client::new();
-            let body = client
-                .get("https://graph.microsoft.com/profile")
-                .header("Authorization", format!("Bearer {token}"))
-                .send()
-                .unwrap();
-            println!("Body = {body:?}");
-            let text = body.text().unwrap();
-            println!("Text = {text:?}");
+            // TODO: attempt to get the user email address
+            // let client = reqwest::blocking::Client::new();
+            // let body = client
+            //     .get("https://graph.microsoft.com/profile")
+            //     .header("Authorization", format!("Bearer {token}"))
+            //     .send()
+            //     .unwrap();
+            // println!("Body = {body:?}");
+            // let text = body.text().unwrap();
+            // println!("Text = {text:?}");
 
             return Ok(token);
         }

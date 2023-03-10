@@ -38,7 +38,7 @@ fn main() {
             trace!("Authenticated successfully!");
             session.select("INBOX").unwrap();
 
-            let messages = session.fetch("1", "RFC822").unwrap();
+            let messages = session.fetch("1,2,3,4,5", "RFC822").unwrap();
 
             for message in messages.iter() {
                 if let Some(body) = message.body() {
