@@ -1,6 +1,6 @@
 use std::{cmp::min, fs};
 
-use crate::email::{Email, EmailFlag};
+use crate::email::Email;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub enum AppFocus {
@@ -37,6 +37,28 @@ impl App {
     pub fn toggle_spam(&mut self) {
         let email = self.emails.get_mut(self.selected_email).unwrap();
         email.toggle_spam();
+    }
+
+    pub fn move_to_spam(&mut self) {
+        let email = self.emails.get(self.selected_email).unwrap();
+        email.move_to_spam().unwrap();
+
+        let emails = self.emails.clone();
+        let (_, kept) = emails
+            .into_iter()
+            .partition(|e| e.internal_id == email.internal_id);
+        self.emails = kept;
+    }
+
+    pub fn archive(&mut self) {
+        let email = self.emails.get(self.selected_email).unwrap();
+        email.archive().unwrap();
+
+        let emails = self.emails.clone();
+        let (_, kept) = emails
+            .into_iter()
+            .partition(|e| e.internal_id == email.internal_id);
+        self.emails = kept;
     }
 
     pub fn show_email(&mut self, email: Email) {

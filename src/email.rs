@@ -63,6 +63,19 @@ impl Email {
         Ok(())
     }
 
+    pub fn move_to(&self, folder: &str) -> anyhow::Result<()> {
+        let backend = backend().unwrap();
+        Ok(backend.move_emails(&self.folder, folder, vec![&self.internal_id])?)
+    }
+
+    pub fn move_to_spam(&self) -> anyhow::Result<()> {
+        self.move_to("Junk Email")
+    }
+
+    pub fn archive(&self) -> anyhow::Result<()> {
+        self.move_to("Archive")
+    }
+
     pub fn mark_spam(&mut self) {
         self.flag = EmailFlag::Spam;
     }

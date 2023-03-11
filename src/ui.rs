@@ -9,6 +9,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use himalaya_lib::Backend;
 use tokio::sync::RwLock;
 use tracing::{info, trace};
 use tui::{
@@ -21,7 +22,7 @@ use tui::{
 };
 use unicode_truncate::UnicodeTruncateStr;
 
-use crate::email::get_emails;
+use crate::email::{backend, get_emails};
 use crate::{
     app::{App, AppFocus},
     email::EmailFlag,
@@ -96,16 +97,55 @@ pub async fn run_app<B: TuiBackend>(
                         KeyCode::Char(' ') => {
                             let mut app = app_arc.write().await;
                             app.toggle_spam();
+                            app.down();
+                        }
+                        KeyCode::Char('s') => {
+                            {
+                                let mut app = app_arc.write().await;
+                                app.loading = true;
+                            }
+
+                            {
+                                let mut app = app_arc.write().await;
+                                app.move_to_spam();
+                            }
+
+                            {
+                                let mut app = app_arc.write().await;
+                                app.loading = false;
+                            }
+                        }
+                        KeyCode::Char('e') => {
+                            {
+                                let mut app = app_arc.write().await;
+                                app.loading = true;
+                            }
+
+                            {
+                                let mut app = app_arc.write().await;
+                                app.archive();
+                            }
+
+                            {
+                                let mut app = app_arc.write().await;
+                                app.loading = false;
+                            }
+                        }
+                        KeyCode::Char('f') => {
+                            let backend = backend()?;
+                            let folders = backend.list_folders()?;
+                            let folders = folders.to_vec();
+                            info!("Folders: {folders:#?}");
                         }
                         KeyCode::Char('d') => {
                             let app = app_arc.read().await;
                             app.dump_emails();
                         }
-                        KeyCode::Down => {
+                        KeyCode::Down | KeyCode::Char('j') => {
                             let mut app = app_arc.write().await;
                             app.down()
                         }
-                        KeyCode::Up => {
+                        KeyCode::Up | KeyCode::Char('k') => {
                             let mut app = app_arc.write().await;
                             app.up()
                         }
