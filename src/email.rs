@@ -49,6 +49,7 @@ impl Email {
         }
 
         info!("Body:\n{}", bodies);
+        fs::write(format!("data/{}.html", self.internal_id), bodies.clone())?;
         self.body = Some(bodies);
 
         Ok(())

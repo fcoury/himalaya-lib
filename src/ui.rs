@@ -77,8 +77,8 @@ pub async fn run_app<B: TuiBackend>(
     loop {
         {
             {
-                let app = app_arc.read().await;
-                terminal.draw(|f| ui(f, &app))?;
+                let mut app = app_arc.write().await;
+                terminal.draw(|f| ui(f, &mut app))?;
             }
 
             let timeout = tick_rate
@@ -105,6 +105,10 @@ pub async fn run_app<B: TuiBackend>(
                         KeyCode::PageUp => {
                             let mut app = app_arc.write().await;
                             app.page_up()
+                        }
+                        KeyCode::Left | KeyCode::Right => {
+                            let mut app = app_arc.write().await;
+                            app.focus_next()
                         }
                         KeyCode::Home => {
                             let mut app = app_arc.write().await;
@@ -134,6 +138,7 @@ pub async fn run_app<B: TuiBackend>(
                         KeyCode::Esc => {
                             let mut app = app_arc.write().await;
                             app.focus = AppFocus::EmailList;
+                            app.open_email = None
                         }
                         _ => {}
                     }
@@ -154,7 +159,7 @@ pub async fn run_app<B: TuiBackend>(
     Ok(())
 }
 
-fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App) {
+fn ui<B: TuiBackend>(f: &mut Frame<B>, mut app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(
@@ -166,6 +171,10 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App) {
             .as_ref(),
         )
         .split(f.size());
+    let body_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+        .split(chunks[1]);
 
     let header = Block::default()
         .borders(Borders::BOTTOM)
@@ -176,6 +185,11 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App) {
 
     let width = f.size().width as usize;
     let max_width = width - 2 - 6;
+    let email_body_height = body_chunks[0].height as usize - 2;
+
+    app.max_width = max_width;
+    app.email_page_size = email_body_height;
+
     let items = app
         .emails
         .iter()
@@ -221,10 +235,6 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App) {
         )
         .highlight_style(Style::default().fg(Color::Black).bg(Color::Yellow))
         .highlight_symbol(">>");
-    let body_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-        .split(chunks[1]);
 
     let mut emails_state = ListState::default();
     emails_state.select(Some(app.selected_email));
@@ -233,19 +243,8 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App) {
 
     match app.open_email {
         Some(ref email) => {
-            let body = match email.clone().body {
-                Some(body) => {
-                    let mut text = html2text::from_read(body.as_bytes(), max_width);
-                    if app.email_offset > 0 {
-                        text = text
-                            .lines()
-                            .skip(app.email_offset)
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                    }
-                    text += "\n--- << End of Message >> ---";
-                    text
-                }
+            let body = match app.email_viewport() {
+                Some(body) => body,
                 None => "No body".to_string(),
             };
 
@@ -269,12 +268,30 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App) {
             f.render_widget(details, body_chunks[1]);
         }
         None => {
-            let details = Block::default().borders(Borders::ALL).title("Details");
+            let details = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray))
+                .title("Details");
             f.render_widget(details, body_chunks[1]);
         }
     };
 
     let state = if app.loading { "LOADING" } else { "NORMAL" };
+    let progress = if app.loading {
+        " ... ".to_string()
+    } else if app.focus == AppFocus::EmailList {
+        format!(
+            " {current}/{len} ",
+            current = app.selected_email + 1,
+            len = app.emails.len()
+        )
+    } else {
+        format!(
+            " {current}/{len} ",
+            current = app.email_offset + 1,
+            len = app.email_line_count().unwrap() + 1
+        )
+    };
 
     let footer = Block::default()
         .borders(Borders::NONE)
@@ -287,11 +304,7 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                format!(
-                    " {current}/{len} ",
-                    current = app.selected_email + 1,
-                    len = app.emails.len()
-                ),
+                progress,
                 Style::default()
                     .fg(Color::White)
                     .bg(Color::DarkGray)
