@@ -1,4 +1,4 @@
-# posters
+# postars
 
 Rust Email client
 

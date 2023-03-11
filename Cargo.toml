@@ -1,33 +1,33 @@
 [package]
 edition = "2021"
-name = "posters"
+name = "postars"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ansi-to-tui = "2.0.0"
 anyhow = "1.0.69"
+chrono = {version = "0.4.23", features = ["serde"]}
 confy = "0.5.1"
+console-subscriber = "0.1.8"
 crossterm = "0.26.1"
 dotenvy = "0.15.6"
+himalaya-lib = {path = "../himalaya-lib"}
+html2text = {version = "0.5.0", features = ["ansi_colours"]}
 imap = "2.4.1"
 mailparse = "0.14.0"
 native-tls = "0.2.11"
 oauth2 = "4.3.0"
 opener = "0.5.2"
 reqwest = "0.11.14"
-serde = { version = "1.0.154", features = ["derive"] }
-serde_json = { version = "1.0.94", features = ["preserve_order"] }
+serde = {version = "1.0.154", features = ["derive"]}
+serde_json = {version = "1.0.94", features = ["preserve_order"]}
 thiserror = "1.0.38"
+tokio = {version = "1.26.0", features = ["full"]}
 tracing = "0.1.37"
+tracing-appender = "0.2.2"
 tracing-subscriber = "0.3.16"
 tui = "0.19.0"
-url = "2.3.1"
-himalaya-lib = {path="../himalaya-lib"}
-tokio = { version = "1.26.0", features = ["full"] }
-console-subscriber = "0.1.8"
-tracing-appender = "0.2.2"
-chrono = { version = "0.4.23", features = ["serde"] }
 unicode-truncate = "0.2.0"
-html2text = { version = "0.5.0", features = ["ansi_colours"] }
-ansi-to-tui = "2.0.0"
+url = "2.3.1"
