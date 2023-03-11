@@ -1,7 +1,6 @@
 use std::cmp::min;
 
 use crossterm::event::{KeyCode, KeyEvent};
-use tracing::info;
 
 use crate::email::Email;
 
@@ -9,6 +8,7 @@ use crate::email::Email;
 pub struct App {
     pub emails: Vec<Email>,
     pub selected_email: usize,
+    pub open_email: Option<Email>,
     pub loading: bool,
 }
 
@@ -69,6 +69,14 @@ impl App {
                     KeyCode::PageDown => self.page_down(),
                     KeyCode::Home => self.home(),
                     KeyCode::End => self.end(),
+                    KeyCode::Enter => {
+                        if let Some(email) = self.emails.get(self.selected_email) {
+                            let mut email = email.clone();
+                            email.load().unwrap();
+
+                            self.open_email = Some(email);
+                        }
+                    }
                     _ => (),
                 },
             }

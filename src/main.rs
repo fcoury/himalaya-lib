@@ -16,10 +16,10 @@ use tracing::{error, info, trace};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tui::{
     backend::{Backend as TuiBackend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem, ListState},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
 use unicode_truncate::UnicodeTruncateStr;
@@ -135,7 +135,8 @@ async fn run_app<B: TuiBackend>(
                         | KeyCode::PageDown
                         | KeyCode::PageUp
                         | KeyCode::Home
-                        | KeyCode::End => events.push(AppEvent::Key(event)),
+                        | KeyCode::End
+                        | KeyCode::Enter => events.push(AppEvent::Key(event)),
                         _ => (),
                     }
                 }
@@ -213,8 +214,6 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App) {
         .block(Block::default().borders(Borders::ALL).title("Emails"))
         .highlight_style(Style::default().fg(Color::Black).bg(Color::Yellow))
         .highlight_symbol(">>");
-    let details = Block::default().borders(Borders::ALL).title("Details");
-
     let body_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
@@ -224,7 +223,35 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App) {
     emails_state.select(Some(app.selected_email));
 
     f.render_stateful_widget(emails, body_chunks[0], &mut emails_state);
-    f.render_widget(details, body_chunks[1]);
+
+    match app.open_email {
+        Some(ref email) => {
+            let body = match email.clone().body {
+                Some(body) => {
+                    let res = html2text::from_read(body.as_bytes(), max_width);
+                    res
+                }
+                None => "No body".to_string(),
+            };
+
+            use ansi_to_tui::IntoText;
+
+            let text = body.into_text().unwrap();
+            info!("text = {:#?}", text);
+            let details = Paragraph::new(text)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(email.subject.clone()),
+                )
+                .alignment(Alignment::Left);
+            f.render_widget(details, body_chunks[1]);
+        }
+        None => {
+            let details = Block::default().borders(Borders::ALL).title("Details");
+            f.render_widget(details, body_chunks[1]);
+        }
+    };
 
     let footer = Block::default()
         .borders(Borders::NONE)
