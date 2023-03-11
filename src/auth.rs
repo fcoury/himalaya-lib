@@ -141,7 +141,7 @@ pub fn auth() -> Result<String, AuthError> {
 
             // Exchange the code with a token.
             let token = client
-                .exchange_code(code.clone())
+                .exchange_code(code)
                 // Send the PKCE code verifier in the token request
                 .set_pkce_verifier(pkce_code_verifier)
                 .request(http_client)
