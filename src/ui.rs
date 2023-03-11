@@ -21,8 +21,11 @@ use tui::{
 };
 use unicode_truncate::UnicodeTruncateStr;
 
-use crate::app::{App, AppFocus};
 use crate::email::get_emails;
+use crate::{
+    app::{App, AppFocus},
+    email::EmailFlag,
+};
 
 pub async fn run(tick_rate: Duration) -> anyhow::Result<()> {
     enable_raw_mode()?;
@@ -90,6 +93,14 @@ pub async fn run_app<B: TuiBackend>(
 
                     match event.code {
                         KeyCode::Char('q') => break,
+                        KeyCode::Char(' ') => {
+                            let mut app = app_arc.write().await;
+                            app.toggle_spam();
+                        }
+                        KeyCode::Char('d') => {
+                            let app = app_arc.read().await;
+                            app.dump_emails();
+                        }
                         KeyCode::Down => {
                             let mut app = app_arc.write().await;
                             app.down()
@@ -194,12 +205,18 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, mut app: &mut App) {
         .emails
         .iter()
         .map(|email| {
+            let mark = if email.flag == EmailFlag::Spam {
+                "◼"
+            } else {
+                " "
+            };
+
             let from = email.from_name.clone().unwrap_or(email.from_addr.clone());
             let from = from
                 .unicode_pad(25, unicode_truncate::Alignment::Left, true)
                 .to_string();
 
-            let subject_width = max_width - 25 - 16 - 3;
+            let subject_width = max_width - 25 - 16 - 3 - 2;
             let subject = email
                 .subject
                 .clone()
@@ -209,6 +226,8 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, mut app: &mut App) {
             let date = email.date.format("%d/%m/%Y %I:%M%P").to_string();
 
             ListItem::new(Spans::from(vec![
+                Span::raw(" "),
+                Span::styled(mark, Style::default().fg(Color::Red)),
                 Span::raw(" "),
                 Span::styled(from, Style::default().fg(Color::Yellow)),
                 Span::raw(" "),

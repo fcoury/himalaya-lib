@@ -1,6 +1,6 @@
-use std::cmp::min;
+use std::{cmp::min, fs};
 
-use crate::email::Email;
+use crate::email::{Email, EmailFlag};
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub enum AppFocus {
@@ -24,6 +24,19 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         App::default()
+    }
+
+    pub fn dump_emails(&self) {
+        fs::write(
+            "data/processed.json",
+            serde_json::to_string_pretty(&self.emails).unwrap(),
+        )
+        .unwrap();
+    }
+
+    pub fn toggle_spam(&mut self) {
+        let email = self.emails.get_mut(self.selected_email).unwrap();
+        email.toggle_spam();
     }
 
     pub fn show_email(&mut self, email: Email) {
