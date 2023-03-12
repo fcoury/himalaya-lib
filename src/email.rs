@@ -121,8 +121,8 @@ pub fn backend<'a>() -> anyhow::Result<ImapBackend<'a>> {
     Ok(ImapBackendBuilder::new().build(Cow::Owned(account), Cow::Owned(config))?)
 }
 
-pub fn get_emails() -> anyhow::Result<Vec<Email>> {
-    if fs::metadata("data/emails.json").is_ok() {
+pub fn get_emails(force: bool) -> anyhow::Result<Vec<Email>> {
+    if !force && fs::metadata("data/emails.json").is_ok() {
         let json = fs::read_to_string("data/emails.json")?;
         let emails: Vec<Email> = serde_json::from_str(&json)?;
         return Ok(emails);

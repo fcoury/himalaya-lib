@@ -165,6 +165,11 @@ async fn handle_keypress(
             channel.send(EventType::MoveToSpam).await?;
             channel.send(EventType::FinishLoading).await?;
         }
+        KeyCode::Char('r') => {
+            channel.send(EventType::StartLoading).await?;
+            channel.send(EventType::RefreshEmails).await?;
+            channel.send(EventType::FinishLoading).await?;
+        }
         KeyCode::Char('d') => {
             app.dump_emails();
         }

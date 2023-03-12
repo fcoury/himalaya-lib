@@ -10,6 +10,7 @@ pub enum EventType {
     StartLoading,
     FinishLoading,
     LoadEmails,
+    RefreshEmails,
     Archive,
     MoveToSpam,
     ToggleSpam,
@@ -40,11 +41,11 @@ impl EventHandler {
 
         // async events
         match event {
-            EventType::LoadEmails => {
+            EventType::LoadEmails | EventType::RefreshEmails => {
                 let app = self.app.clone();
                 tokio::spawn(async move {
                     info!("Started loading emails...");
-                    let emails = get_emails().unwrap();
+                    let emails = get_emails(matches!(event, EventType::RefreshEmails)).unwrap();
                     info!("Done loading emails...");
                     info!("Got {} emails", emails.len());
 
@@ -100,6 +101,7 @@ impl EventHandler {
             EventType::SetEmailPageSize(size) => app.email_page_size = size,
             EventType::OpenEmail => {}
             EventType::LoadEmails => {}
+            EventType::RefreshEmails => {}
             // EventType::SetFocus(focus) => app.focus = focus,
             // EventType::SetEmailOffset(offset) => app.email_offset = offset,
         }
