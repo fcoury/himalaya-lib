@@ -56,12 +56,12 @@ pub async fn run(tick_rate: Duration) -> anyhow::Result<()> {
         info!("Finished handler process");
     });
 
+    // initial load
     tx.send(EventType::StartLoading).await?;
     tx.send(EventType::LoadEmails).await?;
     tx.send(EventType::FinishLoading).await?;
 
     info!("Starting app process");
-    info!("Running app");
     run_app(&mut terminal, app, tick_rate, tx.clone()).await?;
 
     // restore terminal
@@ -92,14 +92,13 @@ pub async fn run_app<B: TuiBackend>(
 
         {
             {
-                let app = app.read().await;
                 let size = terminal.size().unwrap();
-
                 if last_size != Some(size) {
                     last_update = None;
                     last_size = Some(size);
                 }
 
+                let app = app.read().await;
                 if last_update != Some(app.last_update) || last_update.is_none() {
                     trace!("Rendering...");
                     terminal.draw(|f| ui(f, &app, &channel))?;
@@ -124,15 +123,6 @@ pub async fn run_app<B: TuiBackend>(
                     }
                 }
             }
-        }
-
-        if last_tick.elapsed() >= tick_rate {
-            trace!("Starting tick...");
-            // let mut app = app_arc.write().await;
-            // app.on_tick(&events);
-            // events.clear();
-            last_tick = Instant::now();
-            trace!("Tick done...");
         }
     }
 
