@@ -44,25 +44,37 @@ impl EventHandler {
         // async events
         match event {
             EventType::LoadEmails | EventType::RefreshEmails => {
-                let app = self.app.clone();
-                tokio::spawn(async move {
-                    info!("Started loading emails...");
-                    let emails = get_emails(matches!(event, EventType::RefreshEmails)).unwrap();
-                    info!("Done loading emails...");
-                    info!("Got {} emails", emails.len());
+                let mut app = self.app.write().await;
+                app.loading = true;
+                app.update();
+                drop(app);
 
-                    let mut app = app.write().await;
-                    app.emails = emails;
-                    app.last_update = Some(std::time::Instant::now());
+                let emails = tokio::task::spawn_blocking(move || {
+                    info!("Fetching emails...");
+                    let emails = get_emails(matches!(event, EventType::RefreshEmails)).unwrap();
+                    info!("Got {} emails", emails.len());
+                    emails
                 })
                 .await
                 .unwrap();
+
+                let app = self.app.clone();
+                let mut app = app.write().await;
+                app.emails = emails;
+                app.loading = false;
+                app.update();
+                drop(app);
 
                 return;
             }
             EventType::OpenEmail => {
                 let app = self.app.read().await;
                 let mut email = app.selected_email();
+                drop(app);
+
+                let mut app = self.app.write().await;
+                app.loading = true;
+                app.update();
                 drop(app);
 
                 // slow tcp call to imap server
@@ -75,7 +87,9 @@ impl EventHandler {
 
                 let mut app = self.app.write().await;
                 app.show_email(email);
-                app.last_update = Some(std::time::Instant::now());
+                app.loading = false;
+                app.update();
+                drop(app);
 
                 return;
             }
@@ -84,6 +98,13 @@ impl EventHandler {
                 let event = event.clone();
 
                 tokio::spawn(async move {
+                    {
+                        let mut app = app.write().await;
+                        app.loading = true;
+                        app.update();
+                        drop(app);
+                    }
+
                     {
                         let folder = match event {
                             EventType::MoveToSpam => "Junk Email",
@@ -94,11 +115,14 @@ impl EventHandler {
                         let email = app.selected_email();
                         info!("Moving email {} to {}", email.subject, folder);
                         email.move_to(folder).unwrap();
+                        drop(app);
                     }
 
                     let mut app = app.write().await;
                     app.remove_current_email();
-                    app.last_update = Some(std::time::Instant::now());
+                    app.loading = false;
+                    app.update();
+                    drop(app);
                 })
                 .await
                 .unwrap();
@@ -109,28 +133,40 @@ impl EventHandler {
                 let app = self.app.clone();
                 let event = event.clone();
 
-                tokio::spawn(async move {
-                    {
-                        let folder = match event {
-                            EventType::MoveSelectedToSpam => "Junk Email",
-                            EventType::ArchiveSelected => "Archive",
-                            _ => unreachable!(),
-                        };
-                        let app = app.read().await;
-                        let emails = app.selected();
+                {
+                    let mut app = app.write().await;
+                    app.loading = true;
+                    app.update();
+                    drop(app);
+                }
 
-                        for email in emails {
-                            info!("Moving email {} to {}", email.subject, folder);
-                            email.move_to(folder).unwrap();
-                        }
-                    }
+                {
+                    let folder = match event {
+                        EventType::MoveSelectedToSpam => "Junk Email",
+                        EventType::ArchiveSelected => "Archive",
+                        _ => unreachable!(),
+                    };
+                    let app = self.app.read();
+                    let app = app.await.clone();
+                    tokio::task::spawn_blocking(move || {
+                        info!("Moving selected emails to {}", folder);
+                        app.move_selected_to(folder).unwrap();
+                        info!("Moved selected emails to {}", folder);
+                    })
+                    .await
+                    .unwrap();
+                }
 
+                {
+                    info!("Removing selected emails...");
                     let mut app = app.write().await;
                     app.remove_selected();
-                    app.last_update = Some(std::time::Instant::now());
-                })
-                .await
-                .unwrap();
+                    info!("Loading false");
+                    app.loading = false;
+                    info!("Update");
+                    app.update();
+                    drop(app);
+                }
 
                 return;
             }

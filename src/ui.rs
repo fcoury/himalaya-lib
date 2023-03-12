@@ -95,8 +95,8 @@ pub async fn run_app<B: TuiBackend>(
 
                 let app = app.read().await;
                 if last_update != Some(app.last_update) || last_update.is_none() {
-                    trace!("Rendering...");
-                    terminal.draw(|f| ui(f, &app, &channel))?;
+                    info!("Rendering...");
+                    terminal.draw(|f| render(f, &app, &channel))?;
                     last_update = Some(app.last_update);
                 }
             }
@@ -104,12 +104,19 @@ pub async fn run_app<B: TuiBackend>(
             let mut event = reader.next().fuse();
 
             select! {
-                _ = delay => {},
+                _ = delay => {
+                    trace!("Tick");
+                    continue;
+                },
                 maybe_event = event => {
                     match maybe_event {
                         Some(Ok(Event::Key(event))) => {
                             if !handle_keypress(event, &app, &channel).await? {
                                 break;
+                            }
+                            else {
+                                trace!("Handled keypress: {:?}\r", event.code);
+                                continue;
                             }
                         },
                         Some(Err(e)) => println!("Error: {:?}\r", e),
@@ -136,32 +143,24 @@ async fn handle_keypress(
     match event.code {
         KeyCode::Char('q') => return Ok(false),
         KeyCode::Char('e') => {
-            channel.send(EventType::StartLoading).await?;
             if app.has_selection() {
                 channel.send(EventType::ArchiveSelected).await?;
-                // FIXME channel.send(EventType::RefreshEmails).await?;
             } else {
                 channel.send(EventType::Archive).await?;
             }
-            channel.send(EventType::FinishLoading).await?;
         }
         KeyCode::Char(' ') | KeyCode::Char('x') => {
             channel.send(EventType::Select).await?;
         }
         KeyCode::Char('s') => {
-            channel.send(EventType::StartLoading).await?;
             if app.has_selection() {
                 channel.send(EventType::MoveSelectedToSpam).await?;
-                // FIXME channel.send(EventType::RefreshEmails).await?;
             } else {
                 channel.send(EventType::MoveToSpam).await?;
             }
-            channel.send(EventType::FinishLoading).await?;
         }
         KeyCode::Char('r') => {
-            channel.send(EventType::StartLoading).await?;
             channel.send(EventType::RefreshEmails).await?;
-            channel.send(EventType::FinishLoading).await?;
         }
         KeyCode::Char('d') => {
             app.dump_emails();
@@ -188,9 +187,7 @@ async fn handle_keypress(
             channel.send(EventType::End).await?;
         }
         KeyCode::Enter => {
-            channel.send(EventType::StartLoading).await?;
             channel.send(EventType::OpenEmail).await?;
-            channel.send(EventType::FinishLoading).await?;
         }
         KeyCode::Esc => match app.focus {
             AppFocus::EmailList => {
@@ -206,7 +203,7 @@ async fn handle_keypress(
     Ok(true)
 }
 
-fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App, channel: &mpsc::Sender<EventType>) {
+fn render<B: TuiBackend>(f: &mut Frame<B>, app: &App, channel: &mpsc::Sender<EventType>) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(

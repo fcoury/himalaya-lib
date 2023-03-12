@@ -1,8 +1,9 @@
 use std::{cmp::min, fs};
 
+use himalaya_lib::Backend;
 use tracing::info;
 
-use crate::email::Email;
+use crate::email::{backend, Email};
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub enum AppFocus {
@@ -22,11 +23,20 @@ pub struct App {
     pub email_offset: usize,
     pub email_page_size: usize,
     pub last_update: Option<std::time::Instant>,
+    pub current_folder: String,
 }
 
 impl App {
     pub fn new() -> Self {
-        App::default()
+        App {
+            current_folder: "INBOX".into(),
+            ..Default::default()
+        }
+    }
+
+    pub fn update(&mut self) {
+        info!("[app] Setting last update...");
+        self.last_update = Some(std::time::Instant::now());
     }
 
     pub fn select_count(&self) -> usize {
@@ -59,7 +69,25 @@ impl App {
         email.toggle_select();
     }
 
+    pub fn move_selected_to(&self, folder: &str) -> anyhow::Result<()> {
+        let backend = backend().unwrap();
+        let selected = self.selected();
+        let internal_ids = selected
+            .iter()
+            .map(|e| e.internal_id.as_ref())
+            .collect::<Vec<_>>();
+        Ok(backend.move_emails(&self.current_folder, folder, internal_ids.to_owned())?)
+    }
+
     pub fn remove_selected(&mut self) {
+        // FIXME: determine how to get rid of weirdness when you have:
+        //  x Email 1
+        //  x Email 2
+        // [x Email 3                   ]
+        //    Email 4
+        //    Email 5
+        //    Email 6
+        // And the cursor goes to email 6 after you archive selected.
         let emails = self.emails.clone();
         let (_, kept) = emails.into_iter().partition(|e| e.selected);
         self.emails = kept;
