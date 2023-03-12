@@ -20,11 +20,10 @@ pub enum EventType {
     Home,
     End,
     FocusNext,
-    // SetFocus(AppFocus),
-    SetMaxWidth(usize),
-    // SetEmailOffset(usize),
-    SetEmailPageSize(usize),
     OpenEmail,
+    CloseEmail,
+    SetMaxWidth(usize),
+    SetEmailPageSize(usize),
 }
 
 pub struct EventHandler {
@@ -95,13 +94,14 @@ impl EventHandler {
             EventType::PageDown => app.page_down(),
             EventType::Home => app.home(),
             EventType::End => app.end(),
-            // EventType::SetFocus(focus) => app.focus = focus,
-            EventType::SetMaxWidth(width) => app.max_width = width,
-            // EventType::SetEmailOffset(offset) => app.email_offset = offset,
-            EventType::SetEmailPageSize(size) => app.email_page_size = size,
             EventType::FocusNext => app.focus_next(),
+            EventType::CloseEmail => app.close_email(),
+            EventType::SetMaxWidth(width) => app.max_width = width,
+            EventType::SetEmailPageSize(size) => app.email_page_size = size,
             EventType::OpenEmail => {}
             EventType::LoadEmails => {}
+            // EventType::SetFocus(focus) => app.focus = focus,
+            // EventType::SetEmailOffset(offset) => app.email_offset = offset,
         }
         app.last_update = Some(std::time::Instant::now());
     }

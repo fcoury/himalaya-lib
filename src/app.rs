@@ -35,6 +35,11 @@ impl App {
         .unwrap();
     }
 
+    pub fn close_email(&mut self) {
+        self.open_email = None;
+        self.focus = AppFocus::EmailList;
+    }
+
     pub fn toggle_spam(&mut self) {
         let email = self.emails.get_mut(self.selected_email).unwrap();
         email.toggle_spam();
@@ -49,6 +54,7 @@ impl App {
             .into_iter()
             .partition(|e| e.internal_id == email.internal_id);
         self.emails = kept;
+        self.close_email();
     }
 
     pub fn archive(&mut self) {
@@ -60,6 +66,7 @@ impl App {
             .into_iter()
             .partition(|e| e.internal_id == email.internal_id);
         self.emails = kept;
+        self.close_email();
     }
 
     pub fn show_email(&mut self, email: Email) {

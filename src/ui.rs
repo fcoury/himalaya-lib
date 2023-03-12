@@ -194,15 +194,14 @@ async fn handle_keypress(
             channel.send(EventType::OpenEmail).await?;
             channel.send(EventType::FinishLoading).await?;
         }
-        KeyCode::Esc => {
-            if matches!(app.focus, AppFocus::EmailBody) {
+        KeyCode::Esc => match app.focus {
+            AppFocus::EmailList => {
+                channel.send(EventType::CloseEmail).await?;
+            }
+            AppFocus::EmailBody => {
                 channel.send(EventType::FocusNext).await?;
             }
-            // TODO
-            // let mut app = app_arc.write().await;
-            // app.focus = AppFocus::EmailList;
-            // app.open_email = None
-        }
+        },
         _ => {}
     };
 
