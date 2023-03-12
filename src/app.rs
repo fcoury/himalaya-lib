@@ -19,6 +19,7 @@ pub struct App {
     pub max_width: usize,
     pub email_offset: usize,
     pub email_page_size: usize,
+    pub last_update: Option<std::time::Instant>,
 }
 
 impl App {

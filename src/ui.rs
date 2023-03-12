@@ -5,12 +5,16 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use himalaya_lib::Backend;
-use tokio::sync::RwLock;
+use futures::{future::FutureExt, select, StreamExt};
+use futures_timer::Delay;
+use tokio::{
+    runtime::Handle,
+    sync::{mpsc, RwLock},
+};
 use tracing::{info, trace};
 use tui::{
     backend::{Backend as TuiBackend, CrosstermBackend},
@@ -22,10 +26,11 @@ use tui::{
 };
 use unicode_truncate::UnicodeTruncateStr;
 
-use crate::email::{backend, get_emails};
+use crate::event::EventHandler;
 use crate::{
     app::{App, AppFocus},
     email::EmailFlag,
+    event::EventType,
 };
 
 pub async fn run(tick_rate: Duration) -> anyhow::Result<()> {
@@ -36,29 +41,29 @@ pub async fn run(tick_rate: Duration) -> anyhow::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    info!("Starting UI run");
+
     let app = Arc::new(RwLock::new(App::new()));
+    let (tx, mut rx) = mpsc::channel::<EventType>(16);
 
-    let state = app.clone();
+    let cloned_app = app.clone();
     tokio::spawn(async move {
-        trace!("Starting email reader task");
-        {
-            let mut app = state.write().await;
-            app.loading = true;
+        info!("Starting handler process");
+        let handler = EventHandler::new(cloned_app);
+        while let Some(event) = rx.recv().await {
+            trace!("Received: {event:#?}");
+            handler.execute(event).await;
         }
-
-        info!("Reading emails...");
-        let emails = get_emails().expect("should be able to get emails");
-        info!("Emails: {emails:#?}");
-
-        {
-            let mut app = state.write().await;
-            app.emails = emails;
-            app.loading = false;
-        }
-        trace!("Finished email reader task");
+        info!("Finished handler process");
     });
 
-    run_app(&mut terminal, &app, tick_rate).await?;
+    tx.send(EventType::StartLoading).await?;
+    tx.send(EventType::LoadEmails).await?;
+    tx.send(EventType::FinishLoading).await?;
+
+    info!("Starting app process");
+    info!("Running app");
+    run_app(&mut terminal, app, tick_rate, tx.clone()).await?;
 
     // restore terminal
     disable_raw_mode()?;
@@ -74,124 +79,49 @@ pub async fn run(tick_rate: Duration) -> anyhow::Result<()> {
 
 pub async fn run_app<B: TuiBackend>(
     terminal: &mut Terminal<B>,
-    app_arc: &Arc<RwLock<App>>,
+    app: Arc<RwLock<App>>,
     tick_rate: Duration,
+    channel: mpsc::Sender<EventType>,
 ) -> anyhow::Result<()> {
+    info!("Starting app loop");
     let mut last_tick = Instant::now();
+    let mut last_update = None;
+    let mut last_size = None;
     loop {
+        let mut delay = Delay::new(tick_rate).fuse();
+        let mut reader = EventStream::new();
+
         {
             {
-                let mut app = app_arc.write().await;
-                terminal.draw(|f| ui(f, &mut app))?;
+                let app = app.read().await;
+                let size = terminal.size().unwrap();
+
+                if last_size != Some(size) {
+                    last_update = None;
+                    last_size = Some(size);
+                }
+
+                if last_update != Some(app.last_update) || last_update.is_none() {
+                    trace!("Rendering...");
+                    terminal.draw(|f| ui(f, &app, &channel))?;
+                    last_update = Some(app.last_update);
+                }
             }
 
-            let timeout = tick_rate
-                .checked_sub(last_tick.elapsed())
-                .unwrap_or_else(|| Duration::from_secs(0));
-            if crossterm::event::poll(timeout)? {
-                if let Event::Key(event) = event::read()? {
-                    trace!("event = {:?}", event);
+            let mut event = reader.next().fuse();
 
-                    match event.code {
-                        KeyCode::Char('q') => break,
-                        KeyCode::Char(' ') => {
-                            let mut app = app_arc.write().await;
-                            app.toggle_spam();
-                            app.down();
-                        }
-                        KeyCode::Char('s') => {
-                            {
-                                let mut app = app_arc.write().await;
-                                app.loading = true;
+            select! {
+                _ = delay => {},
+                maybe_event = event => {
+                    match maybe_event {
+                        Some(Ok(Event::Key(event))) => {
+                            if !handle_keypress(event, &app, &channel).await? {
+                                break;
                             }
-
-                            {
-                                let mut app = app_arc.write().await;
-                                app.move_to_spam();
-                            }
-
-                            {
-                                let mut app = app_arc.write().await;
-                                app.loading = false;
-                            }
-                        }
-                        KeyCode::Char('e') => {
-                            {
-                                let mut app = app_arc.write().await;
-                                app.loading = true;
-                            }
-
-                            {
-                                let mut app = app_arc.write().await;
-                                app.archive();
-                            }
-
-                            {
-                                let mut app = app_arc.write().await;
-                                app.loading = false;
-                            }
-                        }
-                        KeyCode::Char('f') => {
-                            let backend = backend()?;
-                            let folders = backend.list_folders()?;
-                            let folders = folders.to_vec();
-                            info!("Folders: {folders:#?}");
-                        }
-                        KeyCode::Char('d') => {
-                            let app = app_arc.read().await;
-                            app.dump_emails();
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            let mut app = app_arc.write().await;
-                            app.down()
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            let mut app = app_arc.write().await;
-                            app.up()
-                        }
-                        KeyCode::PageDown => {
-                            let mut app = app_arc.write().await;
-                            app.page_down()
-                        }
-                        KeyCode::PageUp => {
-                            let mut app = app_arc.write().await;
-                            app.page_up()
-                        }
-                        KeyCode::Left | KeyCode::Right => {
-                            let mut app = app_arc.write().await;
-                            app.focus_next()
-                        }
-                        KeyCode::Home => {
-                            let mut app = app_arc.write().await;
-                            app.home()
-                        }
-                        KeyCode::End => {
-                            let mut app = app_arc.write().await;
-                            app.end()
-                        }
-                        KeyCode::Enter => {
-                            {
-                                let mut app = app_arc.write().await;
-                                app.loading = true;
-                            }
-
-                            let state = app_arc.clone();
-                            tokio::spawn(async move {
-                                let mut app = state.write().await;
-                                let mut email = app.selected_email();
-                                // FIXME handle error
-                                email.load().unwrap();
-
-                                app.show_email(email);
-                                app.loading = false;
-                            });
-                        }
-                        KeyCode::Esc => {
-                            let mut app = app_arc.write().await;
-                            app.focus = AppFocus::EmailList;
-                            app.open_email = None
-                        }
-                        _ => {}
+                        },
+                        Some(Err(e)) => println!("Error: {:?}\r", e),
+                        None => {},
+                        _ => {},
                     }
                 }
             }
@@ -210,7 +140,76 @@ pub async fn run_app<B: TuiBackend>(
     Ok(())
 }
 
-fn ui<B: TuiBackend>(f: &mut Frame<B>, mut app: &mut App) {
+async fn handle_keypress(
+    event: event::KeyEvent,
+    app: &Arc<RwLock<App>>,
+    channel: &mpsc::Sender<EventType>,
+) -> anyhow::Result<bool> {
+    trace!("event = {:?}", event);
+
+    let app = app.read().await;
+
+    match event.code {
+        KeyCode::Char('q') => return Ok(false),
+        KeyCode::Char('e') => {
+            channel.send(EventType::StartLoading).await?;
+            channel.send(EventType::Archive).await?;
+            channel.send(EventType::FinishLoading).await?;
+        }
+        KeyCode::Char(' ') => {
+            channel.send(EventType::ToggleSpam).await?;
+            channel.send(EventType::Down).await?;
+        }
+        KeyCode::Char('s') => {
+            channel.send(EventType::StartLoading).await?;
+            channel.send(EventType::MoveToSpam).await?;
+            channel.send(EventType::FinishLoading).await?;
+        }
+        KeyCode::Char('d') => {
+            app.dump_emails();
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            channel.send(EventType::Up).await?;
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            channel.send(EventType::Down).await?;
+        }
+        KeyCode::PageUp => {
+            channel.send(EventType::PageUp).await?;
+        }
+        KeyCode::PageDown => {
+            channel.send(EventType::PageDown).await?;
+        }
+        KeyCode::Left | KeyCode::Right => {
+            channel.send(EventType::FocusNext).await?;
+        }
+        KeyCode::Home => {
+            channel.send(EventType::Home).await?;
+        }
+        KeyCode::End => {
+            channel.send(EventType::End).await?;
+        }
+        KeyCode::Enter => {
+            channel.send(EventType::StartLoading).await?;
+            channel.send(EventType::OpenEmail).await?;
+            channel.send(EventType::FinishLoading).await?;
+        }
+        KeyCode::Esc => {
+            if matches!(app.focus, AppFocus::EmailBody) {
+                channel.send(EventType::FocusNext).await?;
+            }
+            // TODO
+            // let mut app = app_arc.write().await;
+            // app.focus = AppFocus::EmailList;
+            // app.open_email = None
+        }
+        _ => {}
+    };
+
+    Ok(true)
+}
+
+fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App, channel: &mpsc::Sender<EventType>) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(
@@ -238,8 +237,20 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, mut app: &mut App) {
     let max_width = width - 2 - 6;
     let email_body_height = body_chunks[0].height as usize - 2;
 
-    app.max_width = max_width;
-    app.email_page_size = email_body_height;
+    if app.max_width != max_width {
+        tokio::task::block_in_place(move || {
+            Handle::current().block_on(async move {
+                channel
+                    .send(EventType::SetMaxWidth(max_width))
+                    .await
+                    .unwrap();
+                channel
+                    .send(EventType::SetEmailPageSize(email_body_height))
+                    .await
+                    .unwrap();
+            });
+        });
+    }
 
     let items = app
         .emails

@@ -9,6 +9,7 @@ use ui::run;
 mod app;
 mod auth;
 mod email;
+mod event;
 mod ui;
 
 struct OAuth2 {
@@ -26,7 +27,7 @@ impl imap::Authenticator for OAuth2 {
     }
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
 
@@ -40,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let tick_rate = Duration::from_millis(80);
+    let tick_rate = Duration::from_millis(10);
     run(tick_rate).await?;
 
     Ok(())
