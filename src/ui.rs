@@ -1,8 +1,4 @@
-use std::{
-    io,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{io, sync::Arc, time::Duration};
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode},
@@ -18,10 +14,10 @@ use tokio::{
 use tracing::{info, trace};
 use tui::{
     backend::{Backend as TuiBackend, CrosstermBackend},
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
 use unicode_truncate::UnicodeTruncateStr;
@@ -360,6 +356,18 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App, channel: &mpsc::Sender<EventTy
         )
     };
 
+    if app.loading {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default().bg(Color::Rgb(25, 25, 25)));
+        let paragraph = Paragraph::new("Loading...")
+            .alignment(Alignment::Center)
+            .block(block);
+        let area = centered_rect(35, 1, f.size(), CenterBy::Percentage, CenterBy::Size);
+        f.render_widget(Clear, area);
+        f.render_widget(paragraph, area);
+    }
+
     let footer = Block::default()
         .borders(Borders::NONE)
         .title(Spans::from(vec![
@@ -381,4 +389,52 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App, channel: &mpsc::Sender<EventTy
 
     f.render_widget(header, chunks[0]);
     f.render_widget(footer, chunks[2]);
+}
+
+enum CenterBy {
+    Percentage,
+    Size,
+}
+
+fn centered_rect(x: u16, y: u16, r: Rect, center_x: CenterBy, center_y: CenterBy) -> Rect {
+    let y = if matches!(center_y, CenterBy::Size) {
+        4 + y
+    } else {
+        y
+    };
+
+    let vert_constraints = match center_x {
+        CenterBy::Percentage => [
+            Constraint::Percentage((100 - y) / 2),
+            Constraint::Percentage(y),
+            Constraint::Percentage((100 - y) / 2),
+        ],
+        CenterBy::Size => [
+            Constraint::Min(r.height / 2 - y / 2),
+            Constraint::Length(y),
+            Constraint::Min(r.height / 2 - y / 2),
+        ],
+    };
+    let horiz_constraints = match center_y {
+        CenterBy::Percentage => [
+            Constraint::Percentage((100 - x) / 2),
+            Constraint::Percentage(x),
+            Constraint::Percentage((100 - x) / 2),
+        ],
+        CenterBy::Size => [
+            Constraint::Min(r.width / 2 - x / 2),
+            Constraint::Length(x),
+            Constraint::Min(r.width / 2 - x / 2),
+        ],
+    };
+
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(vert_constraints.as_ref())
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(horiz_constraints.as_ref())
+        .split(popup_layout[1])[1]
 }
