@@ -83,7 +83,6 @@ pub async fn run_app<B: TuiBackend>(
     channel: mpsc::Sender<EventType>,
 ) -> anyhow::Result<()> {
     info!("Starting app loop");
-    let mut last_tick = Instant::now();
     let mut last_update = None;
     let mut last_size = None;
     loop {

@@ -61,22 +61,21 @@ impl EventHandler {
                 return;
             }
             EventType::OpenEmail => {
-                let app = self.app.clone();
-                tokio::spawn(async move {
-                    let email = {
-                        let app = app.read().await;
-                        let mut email = app.selected_email();
-                        // FIXME handle error
-                        email.load().unwrap();
-                        email
-                    };
+                let app = self.app.read().await;
+                let mut email = app.selected_email();
+                drop(app);
 
-                    let mut app = app.write().await;
-                    app.show_email(email);
-                    app.last_update = Some(std::time::Instant::now());
+                // slow tcp call to imap server
+                let email = tokio::task::spawn_blocking(move || {
+                    email.load().unwrap();
+                    email
                 })
                 .await
                 .unwrap();
+
+                let mut app = self.app.write().await;
+                app.show_email(email);
+                app.last_update = Some(std::time::Instant::now());
 
                 return;
             }
