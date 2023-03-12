@@ -10,13 +10,6 @@ use tracing::info;
 
 use crate::auth;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, Eq, PartialEq)]
-pub enum EmailFlag {
-    #[default]
-    Unflagged,
-    Spam,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Email {
     pub folder: String,
@@ -26,7 +19,7 @@ pub struct Email {
     pub from_addr: String,
     pub subject: String,
     pub body: Option<String>,
-    pub flag: EmailFlag,
+    pub selected: bool,
 }
 
 impl Email {
@@ -68,23 +61,8 @@ impl Email {
         Ok(backend.move_emails(&self.folder, folder, vec![&self.internal_id])?)
     }
 
-    pub fn move_to_spam(&self) -> anyhow::Result<()> {
-        self.move_to("Junk Email")
-    }
-
-    pub fn archive(&self) -> anyhow::Result<()> {
-        self.move_to("Archive")
-    }
-
-    pub fn mark_spam(&mut self) {
-        self.flag = EmailFlag::Spam;
-    }
-
-    pub fn toggle_spam(&mut self) {
-        match self.flag {
-            EmailFlag::Unflagged => self.mark_spam(),
-            EmailFlag::Spam => self.flag = EmailFlag::Unflagged,
-        }
+    pub fn toggle_select(&mut self) {
+        self.selected = !self.selected;
     }
 
     fn from(folder: &str, envelope: Envelope) -> Self {

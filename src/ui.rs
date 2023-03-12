@@ -29,7 +29,6 @@ use unicode_truncate::UnicodeTruncateStr;
 use crate::event::EventHandler;
 use crate::{
     app::{App, AppFocus},
-    email::EmailFlag,
     event::EventType,
 };
 
@@ -153,16 +152,25 @@ async fn handle_keypress(
         KeyCode::Char('q') => return Ok(false),
         KeyCode::Char('e') => {
             channel.send(EventType::StartLoading).await?;
-            channel.send(EventType::Archive).await?;
+            if app.has_selection() {
+                channel.send(EventType::ArchiveSelected).await?;
+                // FIXME channel.send(EventType::RefreshEmails).await?;
+            } else {
+                channel.send(EventType::Archive).await?;
+            }
             channel.send(EventType::FinishLoading).await?;
         }
-        KeyCode::Char(' ') => {
-            channel.send(EventType::ToggleSpam).await?;
-            channel.send(EventType::Down).await?;
+        KeyCode::Char(' ') | KeyCode::Char('x') => {
+            channel.send(EventType::Select).await?;
         }
         KeyCode::Char('s') => {
             channel.send(EventType::StartLoading).await?;
-            channel.send(EventType::MoveToSpam).await?;
+            if app.has_selection() {
+                channel.send(EventType::MoveSelectedToSpam).await?;
+                // FIXME channel.send(EventType::RefreshEmails).await?;
+            } else {
+                channel.send(EventType::MoveToSpam).await?;
+            }
             channel.send(EventType::FinishLoading).await?;
         }
         KeyCode::Char('r') => {
@@ -260,11 +268,7 @@ fn ui<B: TuiBackend>(f: &mut Frame<B>, app: &App, channel: &mpsc::Sender<EventTy
         .emails
         .iter()
         .map(|email| {
-            let mark = if email.flag == EmailFlag::Spam {
-                "◼"
-            } else {
-                " "
-            };
+            let mark = if email.selected { "◼" } else { " " };
 
             let from = email.from_name.clone().unwrap_or(email.from_addr.clone());
             let from = from

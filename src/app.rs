@@ -1,5 +1,7 @@
 use std::{cmp::min, fs};
 
+use tracing::info;
+
 use crate::email::Email;
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
@@ -27,6 +29,18 @@ impl App {
         App::default()
     }
 
+    pub fn select_count(&self) -> usize {
+        self.emails.iter().filter(|e| e.selected).count()
+    }
+
+    pub fn has_selection(&self) -> bool {
+        self.select_count() > 0
+    }
+
+    pub fn selected(&self) -> Vec<Email> {
+        self.emails.iter().filter(|e| e.selected).cloned().collect()
+    }
+
     pub fn dump_emails(&self) {
         fs::write(
             "data/processed.json",
@@ -40,26 +54,21 @@ impl App {
         self.focus = AppFocus::EmailList;
     }
 
-    pub fn toggle_spam(&mut self) {
+    pub fn toggle_selected(&mut self) {
         let email = self.emails.get_mut(self.selected_email).unwrap();
-        email.toggle_spam();
+        email.toggle_select();
     }
 
-    pub fn move_to_spam(&mut self) {
-        let email = self.emails.get(self.selected_email).unwrap();
-        email.move_to_spam().unwrap();
-
+    pub fn remove_selected(&mut self) {
         let emails = self.emails.clone();
-        let (_, kept) = emails
-            .into_iter()
-            .partition(|e| e.internal_id == email.internal_id);
+        let (_, kept) = emails.into_iter().partition(|e| e.selected);
         self.emails = kept;
         self.close_email();
     }
 
-    pub fn archive(&mut self) {
+    pub fn remove_current_email(&mut self) {
         let email = self.emails.get(self.selected_email).unwrap();
-        email.archive().unwrap();
+        info!("Removing email {}", email.subject);
 
         let emails = self.emails.clone();
         let (_, kept) = emails

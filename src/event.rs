@@ -5,15 +5,17 @@ use tracing::{info, trace};
 
 use crate::{app::App, email::get_emails};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EventType {
     StartLoading,
     FinishLoading,
     LoadEmails,
     RefreshEmails,
     Archive,
+    ArchiveSelected,
     MoveToSpam,
-    ToggleSpam,
+    MoveSelectedToSpam,
+    Select,
     Down,
     Up,
     PageDown,
@@ -78,6 +80,61 @@ impl EventHandler {
 
                 return;
             }
+            EventType::MoveToSpam | EventType::Archive => {
+                let app = self.app.clone();
+                let event = event.clone();
+
+                tokio::spawn(async move {
+                    {
+                        let folder = match event {
+                            EventType::MoveToSpam => "Junk Email",
+                            EventType::Archive => "Archive",
+                            _ => unreachable!(),
+                        };
+                        let app = app.read().await;
+                        let email = app.selected_email();
+                        info!("Moving email {} to {}", email.subject, folder);
+                        email.move_to(folder).unwrap();
+                    }
+
+                    let mut app = app.write().await;
+                    app.remove_current_email();
+                    app.last_update = Some(std::time::Instant::now());
+                })
+                .await
+                .unwrap();
+
+                return;
+            }
+            EventType::MoveSelectedToSpam | EventType::ArchiveSelected => {
+                let app = self.app.clone();
+                let event = event.clone();
+
+                tokio::spawn(async move {
+                    {
+                        let folder = match event {
+                            EventType::MoveSelectedToSpam => "Junk Email",
+                            EventType::ArchiveSelected => "Archive",
+                            _ => unreachable!(),
+                        };
+                        let app = app.read().await;
+                        let emails = app.selected();
+
+                        for email in emails {
+                            info!("Moving email {} to {}", email.subject, folder);
+                            email.move_to(folder).unwrap();
+                        }
+                    }
+
+                    let mut app = app.write().await;
+                    app.remove_selected();
+                    app.last_update = Some(std::time::Instant::now());
+                })
+                .await
+                .unwrap();
+
+                return;
+            }
             _ => {}
         }
 
@@ -86,9 +143,7 @@ impl EventHandler {
         match event {
             EventType::StartLoading => app.loading = true,
             EventType::FinishLoading => app.loading = false,
-            EventType::Archive => app.archive(),
-            EventType::MoveToSpam => app.move_to_spam(),
-            EventType::ToggleSpam => app.toggle_spam(),
+            EventType::Select => app.toggle_selected(),
             EventType::Up => app.up(),
             EventType::Down => app.down(),
             EventType::PageUp => app.page_up(),
@@ -102,6 +157,10 @@ impl EventHandler {
             EventType::OpenEmail => {}
             EventType::LoadEmails => {}
             EventType::RefreshEmails => {}
+            EventType::Archive => {}
+            EventType::MoveToSpam => {}
+            EventType::ArchiveSelected => {}
+            EventType::MoveSelectedToSpam => {}
             // EventType::SetFocus(focus) => app.focus = focus,
             // EventType::SetEmailOffset(offset) => app.email_offset = offset,
         }
