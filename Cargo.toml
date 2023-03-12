@@ -11,7 +11,7 @@ anyhow = "1.0.69"
 chrono = {version = "0.4.23", features = ["serde"]}
 confy = "0.5.1"
 console-subscriber = "0.1.8"
-crossterm = { version = "0.26.1", features = ["event-stream"] }
+crossterm = {version = "0.26.1", features = ["event-stream"]}
 dotenvy = "0.15.6"
 futures = "0.3.27"
 futures-timer = "3.0.2"

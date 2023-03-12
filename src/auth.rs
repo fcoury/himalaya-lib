@@ -1,7 +1,9 @@
 use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
+use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::http_client;
 use oauth2::{
@@ -29,22 +31,56 @@ pub enum AuthError {
 }
 
 #[derive(Default, Serialize, Deserialize)]
+pub struct Token {
+    access_code: String,
+    refresh_code: Option<String>,
+    expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
 pub struct Config {
-    token: Option<String>,
+    auth_token: Option<Token>,
 }
 
-fn get_token() -> Result<Option<String>, confy::ConfyError> {
-    let cfg: Config = confy::load("posters", None)?;
-    Ok(cfg.token)
+fn get_access_code() -> Result<Option<String>, confy::ConfyError> {
+    let cfg: Config = confy::load("postars", None)?;
+    if let Some(token) = cfg.auth_token {
+        let Some(expires_at) = token.expires_at else {
+            return Ok(Some(token.access_code));
+        };
+
+        if expires_at > Utc::now() {
+            return Ok(Some(token.access_code));
+        }
+    }
+
+    Ok(None)
 }
 
-fn save_token(token: &str) -> Result<(), confy::ConfyError> {
-    let token = token.to_string();
-    confy::store("posters", None, Config { token: Some(token) })
+fn save_token(
+    access_code: &str,
+    refresh_code: Option<String>,
+    expires_in: Option<Duration>,
+) -> Result<(), confy::ConfyError> {
+    let expires_at =
+        expires_in.map(|expires_in| Utc::now() + chrono::Duration::from_std(expires_in).unwrap());
+    let token = Token {
+        access_code: access_code.to_string(),
+        refresh_code,
+        expires_at,
+    };
+
+    confy::store(
+        "postars",
+        None,
+        Config {
+            auth_token: Some(token),
+        },
+    )
 }
 
 pub fn auth() -> Result<String, AuthError> {
-    if let Some(token) = get_token()? {
+    if let Some(token) = get_access_code()? {
         debug!("token found, returning...");
         return Ok(token);
     }
@@ -149,8 +185,12 @@ pub fn auth() -> Result<String, AuthError> {
 
             println!("token: {token:?}");
 
-            let token = token.access_token().secret().to_string();
-            save_token(&token)?;
+            let access_code = token.access_token().secret().to_string();
+            let refresh_code = token
+                .refresh_token()
+                .map(|token| token.secret().to_string());
+            let expires_in = token.expires_in();
+            save_token(&access_code, refresh_code, expires_in)?;
 
             // TODO: attempt to get the user email address
             // let client = reqwest::blocking::Client::new();
@@ -163,7 +203,7 @@ pub fn auth() -> Result<String, AuthError> {
             // let text = body.text().unwrap();
             // println!("Text = {text:?}");
 
-            return Ok(token);
+            return Ok(access_code);
         }
     }
 
