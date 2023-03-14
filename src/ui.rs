@@ -47,7 +47,7 @@ pub async fn run(tick_rate: Duration) -> anyhow::Result<()> {
         let handler = EventHandler::new(cloned_app);
         while let Some(event) = rx.recv().await {
             trace!("Received: {event:#?}");
-            handler.execute(event).await;
+            handler.execute(event).await.unwrap();
         }
         info!("Finished handler process");
     });

@@ -1,9 +1,8 @@
 use std::{cmp::min, fs};
 
-use himalaya_lib::Backend;
 use tracing::info;
 
-use crate::email::{backend, Email};
+use crate::{auth, email::Email};
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 pub enum AppFocus {
@@ -69,14 +68,21 @@ impl App {
         email.toggle_select();
     }
 
-    pub fn move_selected_to(&self, folder: &str) -> anyhow::Result<()> {
-        let backend = backend().unwrap();
+    pub async fn move_selected_to(&self, folder: &str) -> anyhow::Result<()> {
+        let access_token = auth::auth().unwrap();
         let selected = self.selected();
         let internal_ids = selected
             .iter()
-            .map(|e| e.internal_id.as_ref())
+            .map(|e| e.internal_id.clone())
             .collect::<Vec<_>>();
-        Ok(backend.move_emails(&self.current_folder, folder, internal_ids.to_owned())?)
+        let res = reqwest::Client::new()
+            .put(format!("http://localhost:3001/api/emails/move/{folder}"))
+            .header("Authorization", format!("Bearer {}", access_token))
+            .json(&internal_ids)
+            .send()
+            .await?;
+        info!("Response from move: {res:#?}");
+        Ok(())
     }
 
     pub fn remove_selected(&mut self) {

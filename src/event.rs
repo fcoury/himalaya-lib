@@ -38,7 +38,7 @@ impl EventHandler {
         Self { app }
     }
 
-    pub async fn execute(&self, event: EventType) {
+    pub async fn execute(&self, event: EventType) -> anyhow::Result<()> {
         trace!("Executing event: {:?}", event);
 
         // async events
@@ -49,14 +49,8 @@ impl EventHandler {
                 app.update();
                 drop(app);
 
-                let emails = tokio::task::spawn_blocking(move || {
-                    info!("Fetching emails...");
-                    let emails = get_emails(matches!(event, EventType::RefreshEmails)).unwrap();
-                    info!("Got {} emails", emails.len());
-                    emails
-                })
-                .await
-                .unwrap();
+                let emails = get_emails().await?;
+                info!("Got {} emails", emails.len());
 
                 let app = self.app.clone();
                 let mut app = app.write().await;
@@ -65,7 +59,7 @@ impl EventHandler {
                 app.update();
                 drop(app);
 
-                return;
+                return Ok(());
             }
             EventType::OpenEmail => {
                 let app = self.app.read().await;
@@ -78,12 +72,7 @@ impl EventHandler {
                 drop(app);
 
                 // slow tcp call to imap server
-                let email = tokio::task::spawn_blocking(move || {
-                    email.load().unwrap();
-                    email
-                })
-                .await
-                .unwrap();
+                email.load().await?;
 
                 let mut app = self.app.write().await;
                 app.show_email(email);
@@ -91,43 +80,39 @@ impl EventHandler {
                 app.update();
                 drop(app);
 
-                return;
+                return Ok(());
             }
             EventType::MoveToSpam | EventType::Archive => {
                 let app = self.app.clone();
                 let event = event.clone();
 
-                tokio::spawn(async move {
-                    {
-                        let mut app = app.write().await;
-                        app.loading = true;
-                        app.update();
-                        drop(app);
-                    }
-
-                    {
-                        let folder = match event {
-                            EventType::MoveToSpam => "Junk Email",
-                            EventType::Archive => "Archive",
-                            _ => unreachable!(),
-                        };
-                        let app = app.read().await;
-                        let email = app.selected_email();
-                        info!("Moving email {} to {}", email.subject, folder);
-                        email.move_to(folder).unwrap();
-                        drop(app);
-                    }
-
+                {
                     let mut app = app.write().await;
-                    app.remove_current_email();
-                    app.loading = false;
+                    app.loading = true;
                     app.update();
                     drop(app);
-                })
-                .await
-                .unwrap();
+                }
 
-                return;
+                {
+                    let folder = match event {
+                        EventType::MoveToSpam => "Junk Email",
+                        EventType::Archive => "Archive",
+                        _ => unreachable!(),
+                    };
+                    let app = app.read().await;
+                    let email = app.selected_email();
+                    info!("Moving email {} to {}", email.subject, folder);
+                    email.move_to(folder).await?;
+                    drop(app);
+                }
+
+                let mut app = app.write().await;
+                app.remove_current_email();
+                app.loading = false;
+                app.update();
+                drop(app);
+
+                return Ok(());
             }
             EventType::MoveSelectedToSpam | EventType::ArchiveSelected => {
                 let app = self.app.clone();
@@ -146,15 +131,10 @@ impl EventHandler {
                         EventType::ArchiveSelected => "Archive",
                         _ => unreachable!(),
                     };
-                    let app = self.app.read();
-                    let app = app.await.clone();
-                    tokio::task::spawn_blocking(move || {
-                        info!("Moving selected emails to {}", folder);
-                        app.move_selected_to(folder).unwrap();
-                        info!("Moved selected emails to {}", folder);
-                    })
-                    .await
-                    .unwrap();
+                    let app = app.read().await;
+                    info!("Moving selected emails to {}", folder);
+                    app.move_selected_to(folder).await?;
+                    info!("Moved selected emails to {}", folder);
                 }
 
                 {
@@ -168,7 +148,7 @@ impl EventHandler {
                     drop(app);
                 }
 
-                return;
+                return Ok(());
             }
             _ => {}
         }
@@ -200,5 +180,7 @@ impl EventHandler {
             // EventType::SetEmailOffset(offset) => app.email_offset = offset,
         }
         app.last_update = Some(std::time::Instant::now());
+
+        Ok(())
     }
 }
