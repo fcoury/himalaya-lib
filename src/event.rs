@@ -116,7 +116,11 @@ impl EventHandler {
             }
             EventType::MoveSelectedToSpam | EventType::ArchiveSelected => {
                 let app = self.app.clone();
-                let event = event.clone();
+                let folder = match event {
+                    EventType::MoveSelectedToSpam => "Junk Email",
+                    EventType::ArchiveSelected => "Archive",
+                    _ => unreachable!(),
+                };
 
                 {
                     let mut app = app.write().await;
@@ -126,15 +130,11 @@ impl EventHandler {
                 }
 
                 {
-                    let folder = match event {
-                        EventType::MoveSelectedToSpam => "Junk Email",
-                        EventType::ArchiveSelected => "Archive",
-                        _ => unreachable!(),
-                    };
                     let app = app.read().await;
                     info!("Moving selected emails to {}", folder);
                     app.move_selected_to(folder).await?;
                     info!("Moved selected emails to {}", folder);
+                    drop(app);
                 }
 
                 {
