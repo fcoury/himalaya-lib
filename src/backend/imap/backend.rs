@@ -291,7 +291,10 @@ impl<'a> ImapBackend<'a> {
         } else {
             client.login(&config.login, passwd.as_ref())
         }
-        .map_err(|res| Error::LoginImapServerError(res.0))?;
+        .map_err(|res| {
+            // TODO report this error - println!("Error: {:?}", res);
+            Error::LoginImapServerError(res.0)
+        })?;
 
         session.debug = log_enabled!(Level::Trace);
 

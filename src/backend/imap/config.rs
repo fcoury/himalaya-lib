@@ -38,7 +38,9 @@ pub struct ImapConfig {
     /// Represents the IMAP server login.
     pub login: String,
     /// Represents the IMAP server password command.
-    pub passwd_cmd: String,
+    pub passwd_cmd: Option<String>,
+    /// Represents the IMAP password,
+    pub password: Option<String>,
     /// Represents an oauth2 access token.
     pub access_token: Option<String>,
 
@@ -59,7 +61,13 @@ impl ImapConfig {
         if self.access_token.is_some() {
             return Ok("".to_string());
         }
-        let passwd = process::run(&self.passwd_cmd, &[]).map_err(Error::GetPasswdError)?;
+        if let Some(password) = &self.password {
+            return Ok(password.to_owned());
+        }
+        let Some(passwd_cmd) = &self.passwd_cmd else {
+            return Err(Error::GetPasswdEmptyError);
+        };
+        let passwd = process::run(&passwd_cmd, &[]).map_err(Error::GetPasswdError)?;
         let passwd = String::from_utf8_lossy(&passwd).to_string();
         let passwd = passwd
             .lines()
