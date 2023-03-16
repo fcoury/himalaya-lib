@@ -69,7 +69,8 @@ impl App {
     }
 
     pub async fn move_selected_to(&self, folder: &str) -> anyhow::Result<()> {
-        let access_token = auth::auth().unwrap();
+        let token = auth::auth().unwrap();
+        let access_token = token.access_code;
         let selected = self.selected();
         let internal_ids = selected
             .iter()

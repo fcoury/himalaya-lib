@@ -1,9 +1,8 @@
 use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
-use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::http_client;
 use oauth2::{
@@ -14,6 +13,18 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{debug, trace};
 use url::Url;
+
+#[derive(Default, Clone, Serialize, Deserialize, Debug)]
+pub struct Token {
+    pub access_code: String,
+    pub refresh_code: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct Config {
+    token: Option<Token>,
+}
 
 #[derive(Debug, Error)]
 pub enum AuthError {
@@ -30,59 +41,23 @@ pub enum AuthError {
     NoTokenPresent,
 }
 
-#[derive(Default, Serialize, Deserialize)]
-pub struct Token {
-    access_code: String,
-    refresh_code: Option<String>,
-    expires_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Default, Serialize, Deserialize)]
-pub struct Config {
-    auth_token: Option<Token>,
-}
-
-fn get_access_code() -> Result<Option<String>, confy::ConfyError> {
+fn get_token() -> Result<Option<Token>, confy::ConfyError> {
     let cfg: Config = confy::load("postars", None)?;
-    if let Some(token) = cfg.auth_token {
-        let Some(expires_at) = token.expires_at else {
-            return Ok(Some(token.access_code));
-        };
+    Ok(cfg.token)
+}
 
-        if expires_at > Utc::now() {
-            return Ok(Some(token.access_code));
+fn save_token(token: Token) -> Result<(), confy::ConfyError> {
+    confy::store("postars", None, Config { token: Some(token) })
+}
+
+pub fn auth() -> Result<Token, AuthError> {
+    if let Some(token) = get_token()? {
+        if let Some(expires_at) = token.expires_at {
+            if expires_at > Utc::now() {
+                debug!("token found, returning...");
+                return Ok(token);
+            }
         }
-    }
-
-    Ok(None)
-}
-
-fn save_token(
-    access_code: &str,
-    refresh_code: Option<String>,
-    expires_in: Option<Duration>,
-) -> Result<(), confy::ConfyError> {
-    let expires_at =
-        expires_in.map(|expires_in| Utc::now() + chrono::Duration::from_std(expires_in).unwrap());
-    let token = Token {
-        access_code: access_code.to_string(),
-        refresh_code,
-        expires_at,
-    };
-
-    confy::store(
-        "postars",
-        None,
-        Config {
-            auth_token: Some(token),
-        },
-    )
-}
-
-pub fn auth() -> Result<String, AuthError> {
-    if let Some(token) = get_access_code()? {
-        debug!("token found, returning...");
-        return Ok(token);
     }
 
     let graph_client_id = ClientId::new(env::var("CLIENT_ID")?);
@@ -183,14 +158,15 @@ pub fn auth() -> Result<String, AuthError> {
                 .request(http_client)
                 .unwrap();
 
-            println!("token: {token:?}");
-
-            let access_code = token.access_token().secret().to_string();
-            let refresh_code = token
-                .refresh_token()
-                .map(|token| token.secret().to_string());
-            let expires_in = token.expires_in();
-            save_token(&access_code, refresh_code, expires_in)?;
+            // let token = token.access_token().secret().to_string();
+            let expires_in = token.expires_in().unwrap();
+            let expires_at = Some(Utc::now() + Duration::seconds(expires_in.as_secs() as i64));
+            let token = Token {
+                access_code: token.access_token().secret().to_string(),
+                refresh_code: Some(token.refresh_token().unwrap().secret().to_string()),
+                expires_at,
+            };
+            save_token(token.clone())?;
 
             // TODO: attempt to get the user email address
             // let client = reqwest::blocking::Client::new();
@@ -203,7 +179,7 @@ pub fn auth() -> Result<String, AuthError> {
             // let text = body.text().unwrap();
             // println!("Text = {text:?}");
 
-            return Ok(access_code);
+            return Ok(token);
         }
     }
 

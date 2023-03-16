@@ -18,7 +18,8 @@ pub struct Email {
 
 impl Email {
     pub async fn load(&mut self) -> anyhow::Result<()> {
-        let access_token = auth::auth().unwrap();
+        let token = auth::auth()?;
+        let access_token = token.access_code;
 
         let body: String = reqwest::Client::new()
             .get(format!(
@@ -37,7 +38,8 @@ impl Email {
     }
 
     pub async fn move_to(&self, folder: &str) -> anyhow::Result<()> {
-        let access_token = auth::auth().unwrap();
+        let token = auth::auth()?;
+        let access_token = token.access_code;
 
         reqwest::Client::new()
             .put(format!(
@@ -56,7 +58,8 @@ impl Email {
 }
 
 pub async fn get_emails() -> anyhow::Result<Vec<Email>> {
-    let access_token = auth::auth().unwrap();
+    let token = auth::auth().unwrap();
+    let access_token = token.access_code;
     let emails = reqwest::Client::new()
         .get("http://localhost:3001/api/emails")
         .header("Authorization", format!("Bearer {}", access_token))
